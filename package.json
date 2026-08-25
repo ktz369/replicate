@@ -1,0 +1,20 @@
+{
+  "name": "oxagent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A Hermes-inspired personal agent running on the pi coding-agent harness.",
+  "scripts": {
+    "cli": "tsx src/cli.ts",
+    "gateway": "tsx gateway/gateway.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.3",
+    "typebox": "^1.3.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

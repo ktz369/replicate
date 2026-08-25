@@ -1,0 +1,6 @@
+{
+  "packages": [
+    "npm:@mnemosyne-oss/pi-mnemosyne",
+    "npm:pi-okf"
+  ]
+}
