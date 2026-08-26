@@ -38,6 +38,12 @@ TG_BOT_TOKEN=123:abc npm run gateway # bridge Telegram
 - **Slice 3** — gateway production-grade (Telegram stabil, Discord adapter, cron delivery)
 - **Slice 4** — session search + auto-skill creation (loop belajar penuh ala Hermes)
 
+## Session memory (Mnemosyne)
+
+CLI tooling lives in a repo-local venv (gitignored):
+`python3 -m venv .venv && .venv/bin/pip install mnemosyne-memory`.
+The MCP server itself runs out-of-repo and is bridged via the `mnemosyne-mcp.js` pi extension.
+
 ## Lisensi
 
 Pilih lisensi sendiri (Hermes: MIT — kode kita orisinal, tidak ada copy kode upstream).
