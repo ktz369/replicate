@@ -6,11 +6,14 @@
  * (Full TUI wiring is roadmap Slice 2; this proves the pipeline.)
  */
 import * as readline from "node:readline/promises";
+import { fileURLToPath } from "node:url";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { BRAND } from "./brand.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 
-const EXTENSION_DIR = new URL("../extensions/memory.ts", import.meta.url).pathname;
+// fileURLToPath, not URL.pathname — pathname percent-encodes spaces
+// (e.g. "/app/Pi Project/"), producing a path pi cannot load.
+const EXTENSION_DIR = fileURLToPath(new URL("../extensions/memory.ts", import.meta.url));
 
 async function main() {
   const oneShot = process.argv[2] === "--say" ? process.argv[3] : undefined;

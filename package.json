@@ -6,7 +6,9 @@
   "description": "A Hermes-inspired personal agent running on the pi coding-agent harness.",
   "scripts": {
     "cli": "tsx src/cli.ts",
-    "gateway": "tsx gateway/gateway.ts"
+    "gateway": "tsx gateway/gateway.ts",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "e2e": "tsx scripts/e2e.ts"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.3",
