@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { BRAND } from "./brand.js";
 import { buildSystemPrompt } from "./system-prompt.js";
+import { ensureWorkspaceRoot, workspaceRootingExtension } from "./workspace.js";
 
 // fileURLToPath, not URL.pathname — pathname percent-encodes spaces
 // (e.g. "/app/Pi Project/"), producing a path pi cannot load.
@@ -21,20 +22,23 @@ async function main() {
   console.log(`${BRAND.name} — ${BRAND.tagline}`);
   if (!oneShot) console.log(`type your message · /new reset · ctrl+c exit\n`);
 
+  const workspaceRoot = ensureWorkspaceRoot();
+
   const modelRuntime = await ModelRuntime.create();
   const loader = new DefaultResourceLoader({
-    cwd: process.cwd(),
+    cwd: workspaceRoot,
     agentDir: getAgentDir(),
     systemPromptOverride: buildSystemPrompt,
+    extensionFactories: [workspaceRootingExtension(workspaceRoot)],
     additionalExtensionPaths: [EXTENSION_DIR],
   });
   await loader.reload();
 
   const { session } = await createAgentSession({
-    cwd: process.cwd(),
+    cwd: workspaceRoot,
     modelRuntime,
     resourceLoader: loader,
-    sessionManager: SessionManager.create(process.cwd()),
+    sessionManager: SessionManager.create(workspaceRoot),
   });
 
   session.subscribe((event) => {
