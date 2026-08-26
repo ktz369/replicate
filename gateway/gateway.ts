@@ -13,6 +13,7 @@ import { createAgentSession, DefaultResourceLoader, getAgentDir, ModelRuntime, S
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { BRAND } from "../src/brand.js";
 import { buildSystemPrompt } from "../src/system-prompt.js";
+import { ensureWorkspaceRoot, workspaceRootingExtension } from "../src/workspace.js";
 
 const API = (method: string) =>
   `https://api.telegram.org/bot${process.env.TG_BOT_TOKEN}/${method}`;
@@ -32,24 +33,29 @@ async function send(chatId: number | string, text: string) {
 
 const sessions = new Map<number, AgentSession>();
 
+// Workspace root is resolved once per gateway process; every chat session
+// runs inside it.
+const WORKSPACE_ROOT = ensureWorkspaceRoot();
+
 async function getSession(chatId: number): Promise<AgentSession> {
   let session = sessions.get(chatId);
   if (session) return session;
   const modelRuntime = await ModelRuntime.create();
   const loader = new DefaultResourceLoader({
-    cwd: process.cwd(),
+    cwd: WORKSPACE_ROOT,
     agentDir: getAgentDir(),
     systemPromptOverride: buildSystemPrompt,
+    extensionFactories: [workspaceRootingExtension(WORKSPACE_ROOT)],
     additionalExtensionPaths: [
       new URL("../extensions/memory.ts", import.meta.url).pathname,
     ],
   });
   await loader.reload();
   const created = await createAgentSession({
-    cwd: process.cwd(),
+    cwd: WORKSPACE_ROOT,
     modelRuntime,
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(process.cwd()),
+    sessionManager: SessionManager.inMemory(WORKSPACE_ROOT),
   });
   session = created.session;
   sessions.set(chatId, session);
