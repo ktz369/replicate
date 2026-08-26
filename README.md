@@ -1,9 +1,9 @@
-# OxAgent
+# MAJESTA
 
-> ⚠️ **Nama ini placeholder.** Ganti sekali di [`src/brand.ts`](src/brand.ts)
-> (`name`, `id`, `tagline`, `author`) dan seluruh agen re-branding.
+> ⚠️ Nama sudah ditetapkan: **MAJESTA**. Author masih placeholder — ganti di
+> [`src/brand.ts`](src/brand.ts) (`author`, `tagline`, `repoUrl`).
 
-Agen personal terinspirasi arsitektur [hermes-agent](https://github.com/NousResearch/hermes-agent),
+Agen personal **MAJESTA**, terinspirasi arsitektur [hermes-agent](https://github.com/NousResearch/hermes-agent),
 dijalankan di atas harness **pi coding-agent** (SDK + extensions + skills) — bukan fork Python.
 
 ## Pemetaan konsep Hermes → Pi
@@ -23,7 +23,7 @@ dijalankan di atas harness **pi coding-agent** (SDK + extensions + skills) — b
 ## Menjalankan (Slice 0)
 
 ```bash
-cd oxagent
+cd majesta
 npm install
 export ANTHROPIC_API_KEY=sk-...     # atau provider lain via ~/.pi/agent/auth.json
 npm run cli                          # chat di terminal

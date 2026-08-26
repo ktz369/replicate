@@ -1,6 +1,6 @@
-# OxAgent — Agent Instructions
+# MAJESTA — Agent Instructions
 
-OxAgent is a personal agent inspired by the [hermes-agent](https://github.com/NousResearch/hermes-agent)
+MAJESTA is a personal agent inspired by the [hermes-agent](https://github.com/NousResearch/hermes-agent)
 architecture, built on the **pi coding-agent harness** (SDK + extensions + skills) in TypeScript —
 not a fork of Hermes' Python codebase.
 
@@ -84,10 +84,11 @@ This project uses a five-layer knowledge map. Each layer has a distinct role —
 **Pipeline** (manual/periodic promotion — there is no daemon):
 
 1. During sessions, capture learnings to Mnemosyne (e.g. `mnemosyne_remember`).
-2. When a memory proves stable and verified, promote it into the `knowledge/` OKF bundle as a
-   concept with `sources` frontmatter citing where it came from.
-3. Validate the bundle with `pi-okf validate`.
-4. Commit.
+2. When a memory proves stable and verified, promote it into the `knowledge/` OKF bundle with the
+   `/compound` skill (one concept per solved problem, provenance frontmatter included).
+3. Audit the bundle periodically with `/compound-refresh` (staleness, overlap, contradiction).
+4. Validate the bundle with `pi-okf validate`.
+5. Commit.
 
 **Boundaries:** the OKF bundle does **not** replace `MEMORY.md`, `CONTEXT.md`, or session memory.
 It is only the *promotion target* for memories that have graduated from ephemeral to curated.
