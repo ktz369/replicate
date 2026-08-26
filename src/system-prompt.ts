@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND, homeDir } from "./brand.js";
 
+/** Hard cap for the MEMORY.md injection in the context tier. */
+export const MAX_MEMORY_CHARS = 4096;
+
 /**
  * Hermes-style three-tier system prompt, adapted to pi:
  *
@@ -12,12 +15,23 @@ import { BRAND, homeDir } from "./brand.js";
  * Pi renders this once per session (prompt-cache friendly across turns),
  * mirroring hermes-agent's cache-tier discipline in agent/system_prompt.py.
  */
-export function buildSystemPrompt(): string {
+export interface PromptOptions {
+  /** Repo root containing soul/SOUL.md. Defaults to process.cwd(). */
+  cwd?: string;
+  /** Agent home containing MEMORY.md. Defaults to homeDir(). */
+  home?: string;
+  /** Timestamp for the volatile tier. Defaults to now (tests pin it). */
+  now?: Date;
+}
+
+export function buildSystemPrompt(opts: PromptOptions = {}): string {
+  const cwd = opts.cwd ?? process.cwd();
+  const home = opts.home ?? homeDir();
   const stable: string[] = [];
   const context: string[] = [];
 
   // ── Stable tier ────────────────────────────────────────────────
-  const soul = readIfExists(join(process.cwd(), "soul", "SOUL.md"));
+  const soul = readIfExists(join(cwd, "soul", "SOUL.md"));
   if (soul) {
     stable.push(renderTemplate(soul));
   } else {
@@ -37,11 +51,14 @@ export function buildSystemPrompt(): string {
   );
 
   // ── Context tier ───────────────────────────────────────────────
-  const memory = readIfExists(join(homeDir(), "MEMORY.md"));
+  const memory = readIfExists(join(home, "MEMORY.md"));
   if (memory) {
-    context.push(
-      ["## Memory snapshot", "", memory.trim(), ""].join("\n"),
-    );
+    const trimmed = memory.trim();
+    const bounded =
+      trimmed.length > MAX_MEMORY_CHARS
+        ? `${trimmed.slice(0, MAX_MEMORY_CHARS)}\n\n[MEMORY.md truncated: showing first ${MAX_MEMORY_CHARS} of ${trimmed.length} characters]`
+        : trimmed;
+    context.push(["## Memory snapshot", "", bounded, ""].join("\n"));
   } else {
     context.push(
       "## Memory snapshot\n\n(empty so far — start building it with memory_save when you learn something durable.)\n",
@@ -49,9 +66,7 @@ export function buildSystemPrompt(): string {
   }
 
   // ── Volatile tier ──────────────────────────────────────────────
-  const volatile = `Current time: ${new Date().toISOString()}`;
-
-  return [...stable, ...context, volatile].join("\n\n");
+  return [...stable, ...context, `Current time: ${(opts.now ?? new Date()).toISOString()}`].join("\n\n");
 }
 
 function readIfExists(path: string): string | null {
@@ -63,9 +78,19 @@ function readIfExists(path: string): string | null {
 }
 
 function renderTemplate(soul: string): string {
-  return soul
+  const rendered = soul
     .replaceAll("{{AGENT_NAME}}", BRAND.name)
     .replaceAll("{{AUTHOR}}", BRAND.author);
+
+  // Validate: fail loudly on placeholders the renderer does not know,
+  // instead of silently leaking {{SOMETHING}} into the live prompt.
+  const leftover = [...rendered.matchAll(/\{\{([A-Z0-9_]+)\}\}/g)].map((m) => m[1]);
+  if (leftover.length > 0) {
+    throw new Error(
+      `SOUL.md contains unsubstituted placeholders: ${[...new Set(leftover)].join(", ")} — add them to renderTemplate()`,
+    );
+  }
+  return rendered;
 }
 
 function fallbackIdentity(): string {
