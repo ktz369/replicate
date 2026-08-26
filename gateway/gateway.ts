@@ -11,6 +11,7 @@
  */
 import { createAgentSession, DefaultResourceLoader, getAgentDir, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { fileURLToPath } from "node:url";
 import { BRAND } from "../src/brand.js";
 import { buildSystemPrompt } from "../src/system-prompt.js";
 import { ensureWorkspaceRoot, workspaceRootingExtension } from "../src/workspace.js";
@@ -47,7 +48,8 @@ async function getSession(chatId: number): Promise<AgentSession> {
     systemPromptOverride: buildSystemPrompt,
     extensionFactories: [workspaceRootingExtension(WORKSPACE_ROOT)],
     additionalExtensionPaths: [
-      new URL("../extensions/memory.ts", import.meta.url).pathname,
+      // fileURLToPath, not URL.pathname — pathname percent-encodes spaces.
+      fileURLToPath(new URL("../extensions/memory.ts", import.meta.url)),
     ],
   });
   await loader.reload();
