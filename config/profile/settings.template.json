@@ -1,0 +1,8 @@
+{
+  "defaultProvider": "vikey",
+  "defaultModel": "glm/glm-5.3-flash",
+  "defaultThinkingLevel": "high",
+  "extensions": [
+    "/opt/data/.pi/extensions/mnemosyne-mcp.js"
+  ]
+}
