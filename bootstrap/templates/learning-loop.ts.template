@@ -1,0 +1,308 @@
+/**
+ * learning-loop.ts — PXC-22 (hardening 06a). Minimal learning loop for the
+ * paci-x profile: throttled post-turn review via a second tiny `pi -p` call,
+ * writing draft-SKILL.md proposals to a review dir. NOTHING is auto-applied:
+ * the operator moving an approved file into skills/ is the only path.
+ * PXC-26 (hardening 06b) adds the /learn command: an explicit source (file
+ * path or ': pasted text') is drafted into the SAME review dir via a tiny
+ * second pi -p call; very large sources get summarize-first treatment;
+ * missing/empty sources are rejected with a clear error. Approval path is
+ * unchanged and no config surfaces exist. Throttle: every N user turns
+ * (default 10, env PXC_LEARN_EVERY_N_TURNS); counter is process memory,
+ * resets on restart. Re-entrancy guarded.
+ */
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+
+export const PROFILE_DIR = "__PROFILE_DIR__";
+/** Draft SKILL.md proposals are written here (review only), never to skills/. */
+export const REVIEW_DIR = `${PROFILE_DIR}/skills-review`;
+export const DEFAULT_EVERY_N = 10;
+
+/** Extension-injected review function: returns reviewer stdout or null. */
+export type ReviewFn = (transcript: string, everyN: number) => Promise<string | null>;
+
+/** Sources larger than this get summarize-first treatment (PXC-26). */
+export const LARGE_SOURCE_CHARS = 24000;
+
+/** Build the review prompt sent to the tiny second pi -p call. */
+export function buildReviewPrompt(transcript: string): string {
+  return [
+    "You are a skill curator. Review the following conversation excerpt.",
+    "Decide whether anything worth persisting as a reusable skill exists in it.",
+    "If yes, reply with EXACTLY one complete draft SKILL.md file (frontmatter with name, description (<=60 chars, ends with a period), version, author: learning-loop, and a provenance line citing the session date; then a short markdown body).",
+    'If nothing is worth saving, reply with exactly: NO_PROPOSAL',
+    "",
+    "=== CONVERSATION EXCERPT START ===",
+    transcript,
+    "=== CONVERSATION EXCERPT END ===",
+  ].join("\n");
+}
+
+/** Extract a compact text transcript from pi session entries. */
+export function extractTranscript(entries: any[]): string {
+  const lines: string[] = [];
+  for (const e of entries) {
+    if (e?.type !== "message") continue;
+    const m = e.message;
+    if (!m || (m.role !== "user" && m.role !== "assistant")) continue;
+    const text = (m.content ?? [])
+      .filter((c: any) => c?.type === "text" && typeof c.text === "string")
+      .map((c: any) => c.text).join(" ").trim();
+    if (text) lines.push(`${m.role}: ${text}`);
+  }
+  return lines.join("\n\n");
+}
+
+/** Default review runner: a tiny second `pi -p` call against the profile. */
+export const defaultReviewFn: ReviewFn = async (transcript) => {
+  // --no-extensions: the reviewer child must NOT load this extension
+  // (settings.json registers it), or it would recurse reviews forever.
+  const proc = spawn("pi", [
+    "-p", "--no-session", "--no-extensions", buildReviewPrompt(transcript),
+  ], { cwd: PROFILE_DIR, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  proc.stdout.on("data", (d: Buffer) => (out += d.toString()));
+  proc.stderr.on("data", (d: Buffer) => process.stderr.write(d));
+  const code: number = await new Promise((res) => proc.on("exit", res));
+  if (code !== 0) {
+    console.error(`[learning-loop] review pi -p exited ${code}`);
+    return null;
+  }
+  return out;
+};
+
+/** Parse a draft proposal out of reviewer stdout (null = nothing proposed). */
+export function parseProposal(out: string): string | null {
+  const text = (out ?? "").trim();
+  if (!text || /NO_PROPOSAL/i.test(text)) return null;
+  const fenced = text.match(/```(?:markdown|md)?\s*\n([\s\S]*?)```/);
+  if (fenced) return fenced[1].trim();
+  return /^---\s*\n/.test(text) ? text : null; // bare SKILL.md draft
+}
+
+/**
+ * Drafting prompt for /learn (PXC-26): turn an explicit source into a draft
+ * SKILL.md. Very large sources get summarize-first behavior (AC).
+ */
+export function buildLearnPrompt(source: string, sourceLabel: string): string {
+  const large = source.length > LARGE_SOURCE_CHARS;
+  return [
+    "You are a skill curator. Turn the following source into a draft SKILL.md",
+    "that meets the repo's frontmatter standards: frontmatter with name",
+    "(lowercase-hyphenated), a description of at most 60 characters ending",
+    "with a period, version, author: learning-loop, and a provenance line",
+    `citing the source (${sourceLabel}); then a short markdown body in the`,
+    "modern section order: # title, Overview, When to Use, Usage, Notes.",
+    ...(large ? [
+      "",
+      `The source is very large (${source.length} chars). Summarize it first,`,
+      "then distill only the durable, reusable skill from the summary — do not",
+      "try to preserve every detail.",
+    ] : []),
+    "If the source contains nothing worth persisting as a skill, reply with",
+    "exactly: NO_PROPOSAL",
+    "",
+    "=== SOURCE START ===",
+    source,
+    "=== SOURCE END ===",
+  ].join("\n");
+}
+
+/** Default /learn drafting runner: tiny second `pi -p` call (no extensions). */
+export const defaultLearnFn = async (
+  source: string, sourceLabel: string): Promise<string | null> => {
+  const proc = spawn("pi", [
+    "-p", "--no-session", "--no-extensions",
+    buildLearnPrompt(source, sourceLabel),
+  ], { cwd: PROFILE_DIR, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  proc.stdout.on("data", (d: Buffer) => (out += d.toString()));
+  proc.stderr.on("data", (d: Buffer) => process.stderr.write(d));
+  const code: number = await new Promise((res) => proc.on("exit", res));
+  if (code !== 0) {
+    console.error(`[learning-loop] learn pi -p exited ${code}`);
+    return null;
+  }
+  return out;
+};
+
+/**
+ * Normalize a /learn draft so its frontmatter always meets the repo
+ * standards (name, description <=60 chars ending with a period, version,
+ * author, provenance) and its body follows the modern section order.
+ * Synthesizes missing fields from the source label; never touches skills/.
+ */
+export function normalizeLearnDraft(draft: string, sourceLabel: string,
+  sessionDate: string): string {
+  let body = draft.replace(/^---\s*\n/, "");
+  const fmEnd = body.match(/^---\s*$/m);
+  let fm = new Map<string, string>();
+  let rest = body;
+  if (fmEnd?.index !== undefined) {
+    for (const line of body.slice(0, fmEnd.index).split("\n")) {
+      const kv = line.match(/^(\w+):\s*(.*)$/);
+      if (kv) fm.set(kv[1], kv[2].trim());
+    }
+    rest = body.slice(fmEnd.index + fmEnd[0].length);
+  }
+  const slug = (sourceLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "").slice(0, 64)) || "learned-skill";
+  const name = fm.get("name") || slug;
+  let description = fm.get("description") ?? "";
+  const clamp60 = (s: string): string => {
+    const body = s.length <= 60
+      ? s
+      : s.slice(0, 59).replace(/\s+\S*$/, "").trimEnd(); // word-boundary cut
+    return body.replace(/\.+$/, "") + ".";
+  };
+  if (description.length > 60) description = clamp60(description);
+  if (!/^[^.]*\.$/.test(description)) {
+    description = clamp60(description.replace(/\.+$/, "")
+      || `Learned from ${sourceLabel}`);
+  }
+  const lines = [
+    "---",
+    `name: ${name}`,
+    `description: ${description}`,
+    `version: ${fm.get("version") || "0.1.0"}`,
+    `author: ${fm.get("author") || "learning-loop"}`,
+    `provenance: learned from ${sourceLabel} on ${sessionDate}`,
+    "---",
+  ];
+  rest = rest.replace(/^\s*\n/, "");
+  return [...lines, "", rest].join("\n");
+}
+
+/** Draft SKILL.md with provenance frontmatter, or null if none proposed. */
+export function buildProposal(out: string, sessionDate: string):
+  { filename: string; content: string } | null {
+  const body = parseProposal(out);
+  if (!body) return null;
+  const content = [
+    "---",
+    "author: learning-loop",
+    `provenance: learned from session ${sessionDate} (review-dir draft — not applied)`,
+    ...body.replace(/^---\s*\n/, "").split("\n"),
+  ].join("\n");
+  return { filename: "proposal-draft.md", content };
+}
+
+export default function learningLoop(pi: ExtensionAPI) {
+  const reviewFn: ReviewFn =
+    (globalThis as any).__pxcReviewFnOverride ?? defaultReviewFn;
+  const reviewDir = process.env.PXC_REVIEW_DIR_OVERRIDE ?? REVIEW_DIR;
+  const n = parseInt(process.env.PXC_LEARN_EVERY_N_TURNS ?? "", 10);
+  const everyN = Number.isFinite(n) && n > 0 ? n : DEFAULT_EVERY_N;
+
+  // Throttle state: plain process memory — resets on restart (per AC).
+  let turnCount = 0;
+  let reviewing = false;
+
+  // Accept both session entries ({type:"message", message:{...}}) and the
+  // agent messages pi delivers on event.messages ({role, content, ...}).
+  const countUserTurn = (entry: any): void => {
+    const m = entry?.type === "message" ? entry.message : entry;
+    if (m?.role !== "user") return;
+    const text = (m.content ?? []).filter((c: any) => c?.type === "text")
+      .map((c: any) => c.text).join(" ");
+    if (typeof text === "string" && text.trim().length > 0) turnCount += 1;
+  };
+
+  const writeProposal = async (proposal: { filename: string; content: string }): Promise<string> => {
+    await mkdir(reviewDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const target = `${reviewDir}/${stamp}-${proposal.filename}`;
+    await writeFile(target, proposal.content, "utf8");
+    return target;
+  };
+
+  const sessionDateNow = (): string => new Date().toISOString().slice(0, 10);
+
+  // PXC-26 (hardening 06b): /learn command — explicit source -> draft
+  // SKILL.md in the SAME review dir; approval path identical to 06a
+  // (operator moves the approved file into skills/). Reuses writeProposal.
+  const learnFn = (globalThis as any).__pxcLearnFnOverride ?? defaultLearnFn;
+  const learn = async (args: string | undefined, ctx: any): Promise<void> => {
+    const arg = (args ?? "").trim();
+    let source = "";
+    let sourceLabel = "";
+    if (!arg) {
+      ctx?.ui?.notify?.("/learn: no source. Usage: /learn <file path> — or /learn : <pasted text>", "error");
+      return;
+    }
+    if (arg.startsWith(":")) {
+      source = arg.slice(1).trim(); // pasted text
+      sourceLabel = "pasted source";
+    } else {
+      const file = arg.replace(/^"|"$/g, "");
+      try {
+        source = await readFile(file, "utf8");
+      } catch {
+        ctx?.ui?.notify?.(`/learn: cannot read source file: ${file}`, "error");
+        return;
+      }
+      sourceLabel = `file ${file}`;
+    }
+    if (!source.trim()) {
+      ctx?.ui?.notify?.("/learn: source is empty — nothing to learn from.", "error");
+      return;
+    }
+    try {
+      const out = await learnFn(source, sourceLabel);
+      const draft = out ? parseProposal(out) : null;
+      if (!draft) {
+        ctx?.ui?.notify?.("/learn: reviewer returned no proposal for this source.", "info");
+        return;
+      }
+      const sessionFile: string = ctx?.sessionManager?.getSessionFile?.() ?? "";
+      const m = sessionFile.match(/(\d{4}-\d{2}-\d{2})/);
+      const content = normalizeLearnDraft(draft, sourceLabel, m ? m[1] : sessionDateNow());
+      const path = await writeProposal({ filename: "learn-draft.md", content });
+      ctx?.ui?.notify?.(
+        `[learning-loop] /learn draft written to review dir: ${path} (operator must move it to skills/ to apply)`,
+        "info");
+    } catch (err) {
+      ctx?.ui?.notify?.(`/learn failed: ${err}`, "error");
+      console.error(`[learning-loop] learn failed: ${err}`);
+    }
+  };
+
+  // Registered only when the runtime provides commands (the test harness
+  // stub does not); /learn is the pi-native surface for this feature.
+  if (typeof (pi as any).registerCommand === "function") {
+    (pi as any).registerCommand("learn", {
+      description: "Turn a source (file path or ': pasted text') into a draft SKILL.md in the review dir",
+      handler: learn,
+    });
+  }
+
+  pi.on("agent_end", async (event, ctx) => {
+    if (reviewing) return;
+    for (const entry of event.messages ?? []) countUserTurn(entry);
+    if (turnCount > 0 && turnCount % everyN !== 0) return;
+
+    const transcript = extractTranscript(ctx.sessionManager.getEntries());
+    if (!transcript) return;
+
+    reviewing = true;
+    try {
+      const sessionFile = ctx.sessionManager.getSessionFile() ?? "";
+      const m = sessionFile.match(/(\d{4}-\d{2}-\d{2})/);
+      const sessionDate = m ? m[1] : new Date().toISOString().slice(0, 10);
+      const out = await reviewFn(transcript, everyN);
+      const proposal = out ? buildProposal(out, sessionDate) : null;
+      if (proposal) {
+        const path = await writeProposal(proposal);
+        console.error(
+          `[learning-loop] proposal written to review dir: ${path} (operator must move it to skills/ to apply)`,
+        );
+      }
+    } catch (err) {
+      console.error(`[learning-loop] review failed: ${err}`);
+    } finally {
+      reviewing = false;
+    }
+  });
+}
