@@ -1,49 +1,41 @@
-# MAJESTA
+# MAJESTA — repo of record
 
-> ⚠️ Nama sudah ditetapkan: **MAJESTA**. Author masih placeholder — ganti di
-> [`src/brand.ts`](src/brand.ts) (`author`, `tagline`, `repoUrl`).
+Repo ini adalah **rumah konfigurasi, persona, dan doctrine** MAJESTA — bukan
+lagi proyek kode. Kode Slice-0 lama diarsipkan di
+[`archive/slice0/`](archive/slice0/) (superseded).
 
-Agen personal **MAJESTA**, terinspirasi arsitektur [hermes-agent](https://github.com/NousResearch/hermes-agent),
-dijalankan di atas harness **pi coding-agent** (SDK + extensions + skills) — bukan fork Python.
+## Arsitektur of record: One Brain / Three Doors
 
-## Pemetaan konsep Hermes → Pi
+- **ONE BRAIN** — satu profil pi yang membawa seluruh identitas dan memori:
+  mnemosyne-mcp (memory layer), skills Trinity (T0–T4 placement, session
+  routing, verification gates), compound engineering (compound /
+  compound-refresh), dan learning-loop. Pintu bersifat stateless soal
+  identitas — satu otak untuk semua pintu.
+- **THREE DOORS** — tiga pintu akses owner, semuanya ke otak yang sama:
+  1. **bb ⇄ pi-acp native** (pintu utama) — thread coding & operasional,
+     permission flow ACP native untuk approval.
+  2. **beye-bridge → Telegram 24/7** — companion di ponsel; approval lewat
+     tombol [Approve]/[Deny] milik pintu Telegram.
+  3. **pi TUI lokal** (opsional).
+- **Approval bersifat door-scoped** — urusan pintu, bukan urusan otak. Setiap
+  pintu memakai mekanisme approval-nya sendiri; tidak ada gating yang dibagi
+  lintas pintu.
+- **ACP-custom retired** (MAJ-22) — jalur pi-acp custom beserta watchdog-nya
+  dibongkar; hanya subtraksi, otak tidak tersentuh.
 
-| Kemampuan Hermes | Implementasi kita di Pi | Status |
-|---|---|---|
-| SOUL.md identity + 3-tier prompt cache | `soul/SOUL.md` + `src/system-prompt.ts` via `DefaultResourceLoader.systemPromptOverride` | ✅ scaffold |
-| Agent-curated memory (MEMORY.md) | extension `extensions/memory.ts`: tool `memory_save` / `memory_search` | ✅ scaffold |
-| Skills (agentskills.io) | native pi skills (`~/.pi/agent/skills`, `.pi/skills`) — standar yang sama dengan Hermes | ✅ gratis dari Pi |
-| Multi-provider model | `ModelRuntime` pi (auth.json/models.json) | ✅ gratis dari Pi |
-| Gateway Telegram/Discord/… | `gateway/gateway.ts` (Telegram long-poll, SDK embed) | 🚧 skeleton |
-| Cron/scheduled automations | bb automations atau node-cron di gateway | ⬜ Slice 3 |
-| Subagent delegation | spawn `createAgentSession()` nested via SDK | ⬜ Slice 3 |
-| FTS5 session search | pi session JSONL + grep/FTS index | ⬜ Slice 4 |
-| TUI penuh (slash commands dll.) | `InteractiveMode` SDK + custom theme | ⬜ Slice 2 |
+## Isi repo
 
-## Menjalankan (Slice 0)
+| Path | Isi |
+|---|---|
+| `config/profile/` | template settings profil pi + cara generate `models.json` |
+| `config/bridge/` | template env pintu Telegram + model routing |
+| `persona/` | persona current-gen (salinan; final di MAJ-14) |
+| `doctrine/skills/` | salinan terdokumentasi skills doctrine (sumber runtime = profil pi) |
+| `archive/slice0/` | kode Slice-0 lama — tidak dipakai runtime mana pun |
+| `.scratch/majesta-core/spec.md` | spec konsolidasi (superseded oleh seri CONS) |
 
-```bash
-cd majesta
-npm install
-export ANTHROPIC_API_KEY=sk-...     # atau provider lain via ~/.pi/agent/auth.json
-npm run cli                          # chat di terminal
-TG_BOT_TOKEN=123:abc npm run gateway # bridge Telegram
-```
+Spec lengkap: `.scratch/majesta-consolidation/spec.md` (One Brain / Three
+Doors). Tiket kerja: bb Tasks seri **CONS** (MAJ-17..MAJ-25) — seri ini sumber
+kerja aktif; tiket majesta-core lama (MAJ-5..13) dibiarkan apa adanya.
 
-## Roadmap
-
-- **Slice 0** — branding layer + memory loop + CLI PoC *(repo ini)*
-- **Slice 1** — verifikasi end-to-end CLI, hardening prompt, unit test system-prompt
-- **Slice 2** — full TUI (`InteractiveMode`) + tema sendiri + slash commands `/model` dsb.
-- **Slice 3** — gateway production-grade (Telegram stabil, Discord adapter, cron delivery)
-- **Slice 4** — session search + auto-skill creation (loop belajar penuh ala Hermes)
-
-## Session memory (Mnemosyne)
-
-CLI tooling lives in a repo-local venv (gitignored):
-`python3 -m venv .venv && .venv/bin/pip install mnemosyne-memory`.
-The MCP server itself runs out-of-repo and is bridged via the `mnemosyne-mcp.js` pi extension.
-
-## Lisensi
-
-Pilih lisensi sendiri (Hermes: MIT — kode kita orisinal, tidak ada copy kode upstream).
+Bootstrap untuk rekonstruksi stack di VPS baru: tiket CONS-05 / MAJ-21.
